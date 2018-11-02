@@ -1,0 +1,195 @@
+version: '2.1'
+services:
+  postgres-wxthird:
+    image: hub.cloudx5.com/justep/postgres:9.5-production
+    restart: always
+
+    ports:
+      - 5432:5432/tcp
+
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    environment:
+      POSTGRES_PASSWORD: 38050726a1790b2f
+      SMS_DB_PASSWORD: 38050726a1790b2f
+      UAA_DB_PASSWORD: 38050726a1790b2f
+      KONG_DB_PASSWORD: 38050726a1790b2f
+      X5_DB_PASSWORD: 38050726a1790b2f
+
+    volumes:
+      - /store/wxthird-vip/app_database:/var/lib/postgresql/data
+
+  sms:
+    image: hub.cloudx5.com/justep/sms:1.0
+    restart: always
+    depends_on:
+      - postgres-wxthird
+
+    ports:
+      - 8782:8782/tcp
+
+    environment:
+      POSTGRES_HOST: postgres-wxthird
+      POSTGRES_PORT: "5432"
+      POSTGRES_PWD: 38050726a1790b2f
+
+  uaa:
+    image: hub.cloudx5.com/justep/uaa:2.1
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "curl -I -s -L http://127.0.0.1:8771 || exit 1"]
+      interval: 5s
+      retries: 30
+    depends_on:
+      - postgres-wxthird
+
+    ports:
+      - 8771:8771/tcp
+
+    environment:
+      CUSTOM_DOMAIN: newdaoapp.cn
+      SMS_HOST: http://kong-wxthird/sms
+      DB_HOST: postgres-wxthird
+      DB_PORT: "5432"
+      DB_PASSWORD: 38050726a1790b2f
+
+
+  minio:
+    image: hub.cloudx5.com/justep/minio:1.0.2
+    restart: always
+
+    ports:
+      - 9000:9000/tcp
+
+    volumes:
+      - /store/wxthird-vip/minio/storage:/minio/storage
+
+
+  storage:
+    image: hub.cloudx5.com/justep/storage:1.0
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "curl -I -s -L http://127.0.0.1:8770 || exit 1"]
+      interval: 5s
+      retries: 30
+    depends_on:
+      - minio
+
+    ports:
+      - 8770:8770/tcp
+
+    environment:
+      MINIO_KUBE_END_POINT: http://minio:9000
+      MINIO_END_POINT:
+
+  wex5:
+    image: hub.cloudx5.com/justep/wex5:2.1
+    restart: always
+    environment:
+      JAVA_OPTS: -Xms128m  -Xmx1024m -Djava.security.egd=file:/dev/./urandom -Duser.timezone=GMT+08
+        -server
+      JUSTEP_HOME: /usr/local/x5
+      GATEWAY_HOST: kong-wxthird
+
+    ports:
+      - 8080:8080/tcp
+
+    volumes:
+      - /store/wxthird-vip/tomcat/webapps:/usr/local/tomcat/webapps
+      - /store/wxthird-vip/x5/model:/usr/local/x5/model
+      - /store/wxthird-vip/x5/conf:/usr/local/x5/conf
+      - /store/wxthird-vip/x5/service-dist:/usr/local/x5/service-dist
+      - /store/wxthird-vip/x5/log:/usr/local/x5/logs
+
+  kong-wxthird:
+    image: hub.cloudx5.com/justep/kong:0.11.2
+    restart: always
+    depends_on:
+      postgres-wxthird:
+        condition: service_healthy
+
+    ports:
+      - 80:80/tcp
+      - 443:8443/tcp
+      - 8001:8001/tcp
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -I -s -L http://127.0.0.1:8001 || exit 1"]
+      interval: 5s
+      retries: 10
+    environment:
+      INDEX_URL: /index.jsp
+      APP_SRV_NAME: wex5
+      UAA_HOST: uaa:8771
+      KONG_DNS_RESOLVER: 127.0.0.11
+      BASE_DOMAIN: newdaoapp.cn
+      KONG_PG_PASSWORD: 38050726a1790b2f
+    volumes:
+      - /store/wxthird-vip/x5/conf:/usr/local/x5/conf
+
+
+  dbrest:
+    image: hub.cloudx5.com/justep/dbrest:1.0.1
+    restart: always
+
+    ports:
+      - 9090:9090/tcp
+
+    environment:
+      RDS_PGSQL_THRIFT_HOST: postgres-wxthird:5432
+
+  wex5-deployer:
+    image: hub.cloudx5.com/justep/wex5-deployer:2.1
+    restart: always
+    depends_on:
+      postgres-wxthird:
+        condition: service_started
+      uaa:
+        condition: service_healthy
+      storage:
+        condition: service_healthy
+      kong-wxthird:
+        condition: service_started
+      nginx:
+        condition: service_started
+      wex5:
+        condition: service_started
+    environment:
+      UAA_HOST: uaa:8771
+      SMS_HOST: sms:8782
+      STORAGE_HOST: storage:8770
+      DBREST_HOST: dbrest:9090
+      GATEWAY_HOST: kong-wxthird
+      GATEWAY_ADMIN_HOST: kong-wxthird:8001
+      APP_SRV_NAME: wex5
+      APP_SRV_PORT: "8080"
+      MINIO_HOST: minio:9000
+      BASE_DOMAIN: newdaoapp.cn
+      DIST_URL: http://nginx:80/dist
+      PRODUCT_URL: http://nginx:80/dist/product
+      APP_SERVICE_URL: http://console-svc.console.svc.cluster.local/service/app
+      RESOURCE_ID: 55d4dbc9-04b7-41fe-aef4-71fe9af1cde1
+      INIT_DB: "true"
+      USE_DB_POOL: "false"
+      DEPLOY_TYPE: production
+      X5_VERSION: 3.7-java
+      DEPLOYMENT_TYPE: dockerComposeSimple
+      CONSOLE_HOST: www.newdao.net
+    volumes:
+      - /store/wxthird-vip/tomcat/webapps:/usr/local/tomcat/webapps
+      - /store/wxthird-vip/x5/model:/usr/local/x5/model
+      - /store/wxthird-vip/x5/conf:/usr/local/x5/conf
+      - /store/wxthird-vip/x5/service-dist:/usr/local/x5/service-dist
+
+  nginx:
+    image:  nginx:1.11.4-alpine
+    restart: always
+
+    ports:
+      - 9966:80/tcp
+
+    volumes:
+      - /store/wxthird-vip/nginx/html:/usr/share/nginx/html
