@@ -15,7 +15,11 @@ echo "start install docker compose"
 sudo curl -L "https://github.com/docker/compose/releases/download/1.23.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
 sudo chmod +x /usr/local/bin/docker-compose
 sudo docker-compose --version
-# sudo chmod -aG docker $USER
+sudo echo '{"registry-mirrors":["https://registry.docker-cn.com"]}' > daemon.json
+sudo mv daemon.json /etc/docker/
+sudo systemctl daemon-reload
+sudo usermod -aG docker $USER
+sudo service docker restart
 
 
 # The fllow is offical instroduction document
