@@ -1,0 +1,28 @@
+version: "3"
+services:
+  mariadb:
+    image: mariadb
+    container_name: mariadb
+    restart: always
+    ports:
+      - "3306:3306"
+    volumes:
+      - "/var/lib/mysql:/var/lib/mysql"
+    environment:
+      MYSQL_ROOT_PASSWORD: x5
+  postgres:
+    image: postgres
+    container_name: postgres
+    restart: always
+    ports:
+      - "5432:5432"
+    volumes:
+      - "/var/lib/postgres/data:/var/lib/postgres/data"
+    environment:
+      POSTGRES_PASSWORD: x5
+  adminer:
+    image: adminer
+    container_name: adminer
+    restart: always
+    ports:
+      - "4000:8080"
